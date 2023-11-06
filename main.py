@@ -1,99 +1,102 @@
-
 import discord
 from discord.ext import commands
-import youtube_dl
+import yt_dlp
 import asyncio
 from webserver import keep_alive
 import os
 
+# Define the bot command prefix and create the bot instance
+bot_prefix = '!'
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix=bot_prefix, intents=intents)
 
-
-
-client = commands.Bot(command_prefix='!',intents=discord.Intents.all())
-
-
-
-
+# Dictionary to store voice clients
 voice_clients = {}
 
-yt_dl_opts = {
-  'format': 'bestaudio/best'
+# Configure yt-dlp options
+yt_opts = {
+    'format': 'bestaudio/best',
 }
-ytdl = youtube_dl.YoutubeDL(yt_dl_opts)
+ytdl = yt_dlp.YoutubeDL(yt_opts)
 
-ffmpeg_options = {'options': "-vn"}
+ffmpeg_options = {
+    'options': '-vn',
+}
 
-#block_words = ["curse_word_1", "curse_word_2", "http://", "https://"]
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user.name}')
 
+@bot.command(name='play')
+async def play(ctx, url):
+    try:
+        if ctx.author.voice and ctx.author.voice.channel:
+            if ctx.guild.id in voice_clients:
+                await voice_clients[ctx.guild.id].disconnect()  # Disconnect before playing a new song
 
+            voice_client = await ctx.author.voice.channel.connect()
+            voice_clients[ctx.guild.id] = voice_client
 
+        loop = asyncio.get_event_loop()
+        info = ytdl.extract_info(url, download=False)
 
+        if 'entries' in info:
+            song = info['entries'][0]['url']
+        else:
+            song = info['url']
 
-@client.event
+        player = discord.FFmpegOpusAudio(song, **ffmpeg_options)
+        voice_clients[ctx.guild.id].play(player)
 
-async def on_message(msg):
+    except Exception as error:
+        print(error)
 
-  
-    if msg.content.startswith("!play"):
+@bot.command(name='pause')
+async def pause(ctx):
+    try:
+        if ctx.guild.id in voice_clients:
+            voice_clients[ctx.guild.id].pause()
+    except Exception as error:
+        print(error)
 
-        try:
-            voice_client = await msg.author.voice.channel.connect()
-            voice_clients[voice_client.guild.id] = voice_client
-        except:
-            print("Error1")
+@bot.command(name='resume')
+async def resume(ctx):
+    try:
+        if ctx.guild.id in voice_clients:
+            voice_clients[ctx.guild.id].resume()
+    except Exception as error:
+        print(error)
 
-        try:
-            url = msg.content.split()[1]
+@bot.command(name='join')
+async def join(ctx):
+    try:
+        if ctx.author.voice and ctx.author.voice.channel:
+            if ctx.guild.id in voice_clients:
+                await voice_clients[ctx.guild.id].disconnect()  # Disconnect before joining a new voice channel
 
-            loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+            voice_client = await ctx.author.voice.channel.connect()
+            voice_clients[ctx.guild.id] = voice_client
+        else:
+            await ctx.send('You must be in a voice channel to use this command.')
+    except Exception as error:
+        print(error)
 
-            song = data['url']
-            player = discord.FFmpegOpusAudio(song, **ffmpeg_options)
+@bot.command(name='disconnect')
+async def disconnect(ctx):
+    try:
+        if ctx.guild.id in voice_clients:
+            await voice_clients[ctx.guild.id].disconnect()
+            voice_clients.pop(ctx.guild.id)  # Remove the voice client from the dictionary
+        else:
+            await ctx.send('Not connected to a voice channel.')
+    except Exception as error:
+        print(error)
 
-            voice_clients[msg.guild.id].play(player)
-
-        except Exception as Error2:
-            print(Error2)
-
-
-    if msg.content.startswith("!pause"):
-        try:
-            voice_clients[msg.guild.id].pause()
-        except Exception as Error2:
-            print(Error2)
-
-    if msg.content.startswith("!resume"):
-        try:
-            voice_clients[msg.guild.id].resume()
-        except Exception as Error2:
-            print(Error2)
-  
-    if msg.content.startswith("!join"):
-        try:
-            voice_client = await msg.author.voice.channel.connect()
-            voice_clients[voice_client.guild.id] = voice_client
-        except:
-            print("Error3")
-  
-    if msg.content.startswith("!disconnect"):
-        try:
-            voice_clients[msg.guild.id].disconnect()
-            await voice_clients[msg.guild.id].disconnect()
-        except Exception as Error2:
-            print(Error2)
-
-    if msg.content.startswith("!stop"):
-        try:
-            voice_clients[msg.guild.id].stop()
-        except Exception as Error2:
-            print(Error2)
-
-
-          
-          
+# Keep the bot running
 keep_alive()
 
-TOKEN = os.environ.get("DISCORD_BOT_SECRET")
+# Retrieve your bot token from environment variables
+TOKEN = os.environ.get('DISCORD_BOT_SECRET')
 
-client.run(TOKEN)
+# Start the bot
+bot.run(TOKEN)
