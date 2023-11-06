@@ -4,6 +4,7 @@ import yt_dlp
 import asyncio
 from webserver import keep_alive
 import os
+from youtubesearchpython import VideosSearch
 
 # Define the bot command prefix and create the bot instance
 bot_prefix = '!'
@@ -28,7 +29,7 @@ async def on_ready():
     print(f'Logged in as {bot.user.name}')
 
 @bot.command(name='play')
-async def play(ctx, url):
+async def play(ctx, *keywords):
     try:
         if ctx.author.voice and ctx.author.voice.channel:
             if ctx.guild.id in voice_clients:
@@ -37,16 +38,24 @@ async def play(ctx, url):
             voice_client = await ctx.author.voice.channel.connect()
             voice_clients[ctx.guild.id] = voice_client
 
-        loop = asyncio.get_event_loop()
-        info = ytdl.extract_info(url, download=False)
+            # Join the keywords to search for as a single string
+            query = ' '.join(keywords)
+            videosSearch = VideosSearch(query, limit = 1)
+            video_url = videosSearch.result()['result'][0]['link']
 
-        if 'entries' in info:
-            song = info['entries'][0]['url']
+            loop = asyncio.get_event_loop()
+            info = ytdl.extract_info(video_url, download=False)
+
+            if 'entries' in info:
+                song = info['entries'][0]['url']
+            else:
+                song = info['url']
+
+            player = discord.FFmpegOpusAudio(song, **ffmpeg_options)
+            voice_clients[ctx.guild.id].play(player)
+
         else:
-            song = info['url']
-
-        player = discord.FFmpegOpusAudio(song, **ffmpeg_options)
-        voice_clients[ctx.guild.id].play(player)
+            await ctx.send('You must be in a voice channel to use this command.')
 
     except Exception as error:
         print(error)
